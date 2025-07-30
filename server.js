@@ -3,12 +3,27 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration
+// Lưu trữ lịch sử kết quả
+const resultHistory = {
+    taiXiu: [],
+    md5: []
+};
+
+// Cấu hình
 const API_BASE_URL = 'https://jakpotgwab.geightdors.net/glms/v1/notify/taixiu';
 const PLATFORM_ID = 'g8';
 const GAME_ID = 'vgmn_104';
 
-// Helper function to fetch data from API
+// Hàm tạo pattern từ lịch sử
+function generatePattern(history) {
+    if (history.length === 0) return "txtxtxtxt"; // Mặc định nếu không có lịch sử
+    
+    // Chỉ lấy 8 kết quả gần nhất
+    const last8 = history.slice(-8);
+    return last8.map(result => result === "Tài" ? "t" : "x").join("");
+}
+
+// Hàm lấy dữ liệu từ API
 async function fetchTaiXiuData(endpoint) {
     try {
         const url = `${API_BASE_URL}?platform_id=${PLATFORM_ID}&gid=${GAME_ID}`;
@@ -27,71 +42,72 @@ async function fetchTaiXiuData(endpoint) {
     }
 }
 
-// Process Tai Xiu data
+// Xử lý dữ liệu Tài Xỉu
 function processTaiXiuData(data) {
     let result = {
-        currentRound: null,
-        currentBet: null,
-        result: null
+        id: "binhtool90",
+        phien: null,
+        Xuc_xac_1: null,
+        Xuc_xac_2: null,
+        Xuc_xac_3: null,
+        Tong: null,
+        Ket_qua: null,
+        pattern: generatePattern(resultHistory.taiXiu),
+        Du_doan: null
     };
 
     for (const item of data) {
         if (item.cmd === 1008) {
-            result.currentRound = {
-                sid: item.sid,
-                bigBet: {
-                    users: item.gi[0].B.tU,
-                    amount: item.gi[0].B.tB
-                },
-                smallBet: {
-                    users: item.gi[0].S.tU,
-                    amount: item.gi[0].S.tB
-                }
-            };
+            result.phien = item.sid;
         } else if (item.cmd === 1003) {
-            result.result = {
-                d1: item.d1,
-                d2: item.d2,
-                d3: item.d3,
-                total: item.d1 + item.d2 + item.d3,
-                isJackpot: item.iJp,
-                jackpotValue: item.tJpV
-            };
+            result.Xuc_xac_1 = item.d1;
+            result.Xuc_xac_2 = item.d2;
+            result.Xuc_xac_3 = item.d3;
+            result.Tong = item.d1 + item.d2 + item.d3;
+            result.Ket_qua = result.Tong >= 11 ? "Tài" : "Xỉu";
+            result.Du_doan = result.Tong >= 11 ? "Tài" : "Xỉu";
+            
+            // Cập nhật lịch sử
+            resultHistory.taiXiu.push(result.Ket_qua);
         }
     }
 
     return result;
 }
 
-// Process MD5 data
+// Xử lý dữ liệu MD5
 function processMd5Data(data) {
     let result = {
-        currentRound: null,
-        result: null
+        id: "binhtool90",
+        phien: null,
+        Xuc_xac_1: null,
+        Xuc_xac_2: null,
+        Xuc_xac_3: null,
+        Tong: null,
+        Ket_qua: null,
+        pattern: generatePattern(resultHistory.md5),
+        Du_doan: null,
+        md5: null,
+        resultString: null,
+        reducedResult: null
     };
 
     for (const item of data) {
         if (item.cmd === 2007) {
-            result.currentRound = {
-                sid: item.sid,
-                bets: item.bs.map(bet => ({
-                    eid: bet.eid,
-                    betCount: bet.bc,
-                    amount: bet.v
-                }))
-            };
+            result.phien = item.sid;
         } else if (item.cmd === 2006) {
-            result.result = {
-                d1: item.d1,
-                d2: item.d2,
-                d3: item.d3,
-                total: item.d1 + item.d2 + item.d3,
-                isJackpot: item.iJp,
-                jackpotValue: item.tJpV,
-                md5: item.md5,
-                resultString: item.rs,
-                reducedResult: item.rrs
-            };
+            result.Xuc_xac_1 = item.d1;
+            result.Xuc_xac_2 = item.d2;
+            result.Xuc_xac_3 = item.d3;
+            result.Tong = item.d1 + item.d2 + item.d3;
+            result.Ket_qua = result.Tong >= 11 ? "Tài" : "Xỉu";
+            result.Du_doan = result.Tong >= 11 ? "Tài" : "Xỉu";
+            result.md5 = item.md5;
+            result.resultString = item.rs;
+            result.reducedResult = item.rrs;
+            
+            // Cập nhật lịch sử
+            resultHistory.md5.push(result.Ket_qua);
         }
     }
 
@@ -135,7 +151,7 @@ app.get('/api/md5', async (req, res) => {
     }
 });
 
-// Start server
+// Khởi động server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
