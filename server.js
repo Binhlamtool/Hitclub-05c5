@@ -1,49 +1,82 @@
-import axios from 'axios';
+const express = require("express");
+const axios = require("axios");
+const cors = require("cors");
 
+const app = express();
+app.use(cors());
+
+const PORT = process.env.PORT || 5000;
 const API_URL = "https://jakpotgwab.geightdors.net/glms/v1/notify/taixiu?platform_id=g8&gid=vgmn_104";
 
-async function fetchGameData() {
+// Endpoint 1: Lọc kết quả MD5
+app.get("/api/md5", async (req, res) => {
   try {
     const response = await axios.get(API_URL);
-    const data = response.data?.data || [];
+    const items = Array.isArray(response.data) ? response.data : [];
 
-    const maPhienHu = data.find(item => item.cmd === 1008)?.sid || null;
-    const maPhienMD5 = data.find(item => item.cmd === 2007)?.sid || null;
+    // Lọc đúng cấu trúc md5: có d1, d2, d3, iJp và KHÔNG có sid
+    const md5Result = items.find(
+      item =>
+        typeof item.d1 === "number" &&
+        typeof item.d2 === "number" &&
+        typeof item.d3 === "number" &&
+        typeof item.iJp === "boolean" &&
+        item.sid === undefined
+    );
 
-    const ketQuaHu = data.find(item => item.cmd === 1003 && item.d1 !== undefined && item.d2 !== undefined && item.d3 !== undefined);
-    const ketQuaMD5 = data.find(item => item.cmd === 2006 && item.d1 !== undefined && item.d2 !== undefined && item.d3 !== undefined);
-
-    const formatKetQua = (result) => {
-      if (!result) return null;
-      const tong = result.d1 + result.d2 + result.d3;
-      return {
-        d1: result.d1,
-        d2: result.d2,
-        d3: result.d3,
-        tong: tong,
-        ket_qua: tong >= 11 ? "Tài" : "Xỉu"
-      };
-    };
-
-    const output = {
-      id: "binhtool90",
-      hu: {
-        phien: maPhienHu,
-        ket_qua: formatKetQua(ketQuaHu)
-      },
-      md5: {
-        phien: maPhienMD5,
-        ket_qua: formatKetQua(ketQuaMD5),
-        md5: ketQuaMD5?.md5 || null
-      }
-    };
-
-    console.log("✅ Kết quả phân tích:");
-    console.log(JSON.stringify(output, null, 2));
-  } catch (error) {
-    console.error("❌ Lỗi khi fetch dữ liệu:", error.message);
+    if (md5Result) {
+      res.json({
+        status: "success",
+        type: "md5",
+        result: {
+          d1: md5Result.d1,
+          d2: md5Result.d2,
+          d3: md5Result.d3,
+          iJp: md5Result.iJp
+        }
+      });
+    } else {
+      res.json({ status: "not_found", message: "Không tìm thấy kết quả MD5 phù hợp." });
+    }
+  } catch (err) {
+    res.status(500).json({ status: "error", error: err.message });
   }
-}
+});
 
-// Gọi hàm
-fetchGameData();
+// Endpoint 2: Lọc kết quả HŨ
+app.get("/api/hu", async (req, res) => {
+  try {
+    const response = await axios.get(API_URL);
+    const items = Array.isArray(response.data) ? response.data : [];
+
+    // Lọc đúng cấu trúc hu: có sid, d1, d2, d3, iJp
+    const huResult = items.find(
+      item =>
+        typeof item.sid === "number" &&
+        typeof item.d1 === "number" &&
+        typeof item.d2 === "number" &&
+        typeof item.d3 === "number" &&
+        typeof item.iJp === "boolean"
+    );
+
+    if (huResult) {
+      res.json({
+        status: "success",
+        type: "hu",
+        result: {
+          sid: huResult.sid,
+          d1: huResult.d1,
+          d2: huResult.d2,
+          d3: huResult.d3,
+          iJp: huResult.iJp
+        }
+      });
+    } else {
+      res.json({ status: "not_found", message: "Không tìm thấy kết quả HŨ phù hợp." });
+    }
+  } catch (err) {
+    res.status(500).json({ status: "error", error: err.message });
+  }
+});
+
+app.listen(PORT, () => console.log(`✅ Server đang chạy tại http://localhost:${PORT}`));
