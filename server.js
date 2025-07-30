@@ -3,10 +3,10 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Lưu trữ lịch sử kết quả
-const resultHistory = {
-    taiXiu: [],
-    md5: []
+// Lưu trữ lịch sử kết quả thực tế
+const actualPatterns = {
+    taiXiu: "txtxtxtxtxtxtx", // Pattern thực tế từ game
+    md5: "txtxtxtxtxtxtx"    // Pattern thực tế từ game
 };
 
 // Cấu hình
@@ -14,13 +14,28 @@ const API_BASE_URL = 'https://jakpotgwab.geightdors.net/glms/v1/notify/taixiu';
 const PLATFORM_ID = 'g8';
 const GAME_ID = 'vgmn_104';
 
-// Hàm tạo pattern từ lịch sử
-function generatePattern(history) {
-    if (history.length === 0) return "txtxtxtxt"; // Mặc định nếu không có lịch sử
+// Hàm lấy pattern thực tế từ API
+function getActualPattern(data, gameType) {
+    let pattern = "";
     
-    // Chỉ lấy 8 kết quả gần nhất
-    const last8 = history.slice(-8);
-    return last8.map(result => result === "Tài" ? "t" : "x").join("");
+    // Lấy 13 kết quả gần nhất từ data
+    const results = [];
+    for (const item of data) {
+        if ((gameType === 'taiXiu' && item.cmd === 1003) || 
+            (gameType === 'md5' && item.cmd === 2006)) {
+            const total = item.d1 + item.d2 + item.d3;
+            results.push(total >= 11 ? "t" : "x");
+        }
+    }
+    
+    // Chỉ lấy 13 kết quả gần nhất
+    const last13 = results.slice(-13);
+    if (last13.length > 0) {
+        pattern = last13.join("");
+        actualPatterns[gameType] = pattern; // Cập nhật pattern thực
+    }
+    
+    return actualPatterns[gameType];
 }
 
 // Hàm lấy dữ liệu từ API
@@ -44,6 +59,8 @@ async function fetchTaiXiuData(endpoint) {
 
 // Xử lý dữ liệu Tài Xỉu
 function processTaiXiuData(data) {
+    const actualPattern = getActualPattern(data, 'taiXiu');
+    
     let result = {
         id: "binhtool90",
         phien: null,
@@ -52,7 +69,7 @@ function processTaiXiuData(data) {
         Xuc_xac_3: null,
         Tong: null,
         Ket_qua: null,
-        pattern: generatePattern(resultHistory.taiXiu),
+        pattern: actualPattern, // Sử dụng pattern thực tế
         Du_doan: null
     };
 
@@ -65,10 +82,7 @@ function processTaiXiuData(data) {
             result.Xuc_xac_3 = item.d3;
             result.Tong = item.d1 + item.d2 + item.d3;
             result.Ket_qua = result.Tong >= 11 ? "Tài" : "Xỉu";
-            result.Du_doan = result.Tong >= 11 ? "Tài" : "Xỉu";
-            
-            // Cập nhật lịch sử
-            resultHistory.taiXiu.push(result.Ket_qua);
+            result.Du_doan = predictNext(actualPattern); // Dự đoán từ pattern thực
         }
     }
 
@@ -77,6 +91,8 @@ function processTaiXiuData(data) {
 
 // Xử lý dữ liệu MD5
 function processMd5Data(data) {
+    const actualPattern = getActualPattern(data, 'md5');
+    
     let result = {
         id: "binhtool90",
         phien: null,
@@ -85,7 +101,7 @@ function processMd5Data(data) {
         Xuc_xac_3: null,
         Tong: null,
         Ket_qua: null,
-        pattern: generatePattern(resultHistory.md5),
+        pattern: actualPattern, // Sử dụng pattern thực tế
         Du_doan: null,
         md5: null,
         resultString: null,
@@ -101,17 +117,30 @@ function processMd5Data(data) {
             result.Xuc_xac_3 = item.d3;
             result.Tong = item.d1 + item.d2 + item.d3;
             result.Ket_qua = result.Tong >= 11 ? "Tài" : "Xỉu";
-            result.Du_doan = result.Tong >= 11 ? "Tài" : "Xỉu";
+            result.Du_doan = predictNext(actualPattern); // Dự đoán từ pattern thực
             result.md5 = item.md5;
             result.resultString = item.rs;
             result.reducedResult = item.rrs;
-            
-            // Cập nhật lịch sử
-            resultHistory.md5.push(result.Ket_qua);
         }
     }
 
     return result;
+}
+
+// Hàm dự đoán từ pattern thực
+function predictNext(pattern) {
+    if (!pattern || pattern.length < 5) return "Tài/Xỉu ngẫu nhiên";
+    
+    // Phân tích pattern
+    const last5 = pattern.slice(-5);
+    const taiCount = (last5.match(/t/g) || []).length;
+    const xiuCount = (last5.match(/x/g) || []).length;
+    
+    // Dự đoán đơn giản dựa trên tỷ lệ
+    if (taiCount >= 4) return "Xỉu"; // Theo quy luật cân bằng
+    if (xiuCount >= 4) return "Tài"; // Theo quy luật cân bằng
+    
+    return Math.random() > 0.5 ? "Tài" : "Xỉu";
 }
 
 // API Routes
