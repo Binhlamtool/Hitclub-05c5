@@ -1,120 +1,94 @@
 import express from 'express';
-import axios from 'axios';
+import fetch from 'node-fetch';
 import cors from 'cors';
 
 const app = express();
 app.use(cors());
 
-const PORT = process.env.PORT || 3000;
+const API_URL = 'https://jakpotgwab.geightdors.net/glms/v1/notify/taixiu?platform_id=g8&gid=vgmn_104';
 
-let patternHistory = [];
-let lastTaiXiu = null;
-let lastMd5 = null;
-
-function getKetQua(tong) {
-  return tong >= 11 ? 'Tài' : 'Xỉu';
+function getKetQua(sum) {
+  return sum >= 11 ? 'Tài' : 'Xỉu';
 }
 
-function getPattern() {
-  return patternHistory.map(t => t >= 11 ? 't' : 'x').join('');
+function getPattern(d1, d2, d3) {
+  return d1 + d2 + d3 >= 11 ? 't' : 'x';
 }
 
-function predictNext() {
-  if (patternHistory.length < 3) return 'Không đủ dữ liệu';
-  const last3 = patternHistory.slice(-3).map(t => t >= 11 ? 't' : 'x').join('');
-  const map = {
-    'ttt': 'Xỉu',
-    'xxx': 'Tài',
-    'txt': 'Xỉu',
-    'xtx': 'Tài'
-  };
-  return map[last3] || 'Tài';
-}
-
-async function fetchData() {
+app.get('/api/banthuong', async (req, res) => {
   try {
-    const res = await axios.get('https://jakpotgwab.geightdors.net/glms/v1/notify/taixiu?platform_id=g8&gid=vgmn_101');
-    const items = res.data.data;
+    const response = await fetch(API_URL);
+    const json = await response.json();
+    const data = json.data;
 
-    let phienThuong = null, kqThuong = null;
-    let phienMd5 = null, kqMd5 = null;
+    // Tìm object chứa d1, d2, d3 và không có md5 (bàn thường)
+    const result = data.find(item =>
+      typeof item.d1 === 'number' &&
+      typeof item.d2 === 'number' &&
+      typeof item.d3 === 'number' &&
+      !item.md5
+    );
 
-    for (const item of items) {
-      switch (item.cmd) {
-        case 1008:
-          phienThuong = item.sid;
-          break;
-        case 1003:
-          kqThuong = item;
-          break;
-        case 2007:
-          phienMd5 = item.sid;
-          break;
-        case 2006:
-          kqMd5 = item;
-          break;
-      }
-    }
+    if (!result) return res.status(404).json({ error: 'Không tìm thấy dữ liệu bàn thường' });
 
-    // Gộp bàn thường
-    if (phienThuong && kqThuong) {
-      const tong = kqThuong.d1 + kqThuong.d2 + kqThuong.d3;
-      const ket_qua = getKetQua(tong);
-      patternHistory.push(tong);
-      if (patternHistory.length > 10) patternHistory.shift();
+    const tong = result.d1 + result.d2 + result.d3;
 
-      lastTaiXiu = {
-        id: "binhtool90",
-        phien: phienThuong,
-        xuc_xac_1: kqThuong.d1,
-        xuc_xac_2: kqThuong.d2,
-        xuc_xac_3: kqThuong.d3,
-        tong,
-        ket_qua,
-        pattern: getPattern(),
-        du_doan: predictNext()
-      };
-    }
+    res.json({
+      id: 'binhtool90',
+      phien: result.sid || null,
+      xuc_xac_1: result.d1,
+      xuc_xac_2: result.d2,
+      xuc_xac_3: result.d3,
+      tong: tong,
+      ket_qua: getKetQua(tong),
+      pattern: getPattern(result.d1, result.d2, result.d3),
+      du_doan: getKetQua(tong) === 'Tài' ? 'Xỉu' : 'Tài'
+    });
 
-    // Gộp bàn MD5
-    if (phienMd5 && kqMd5) {
-      const tong = kqMd5.d1 + kqMd5.d2 + kqMd5.d3;
-      const ket_qua = getKetQua(tong);
-      patternHistory.push(tong);
-      if (patternHistory.length > 10) patternHistory.shift();
-
-      lastMd5 = {
-        id: "binhtool90",
-        phien: phienMd5,
-        xuc_xac_1: kqMd5.d1,
-        xuc_xac_2: kqMd5.d2,
-        xuc_xac_3: kqMd5.d3,
-        tong,
-        ket_qua,
-        pattern: getPattern(),
-        du_doan: predictNext()
-      };
-    }
-
-  } catch (e) {
-    console.error('Lỗi khi fetch:', e.message);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Lỗi khi lấy dữ liệu bàn thường' });
   }
-}
-
-setInterval(fetchData, 5000);
-
-// API Bàn thường
-app.get('/api/taixiu', (req, res) => {
-  if (lastTaiXiu) return res.json(lastTaiXiu);
-  res.json({ message: 'Chưa có dữ liệu bàn thường' });
 });
 
-// API MD5
-app.get('/api/md5', (req, res) => {
-  if (lastMd5) return res.json(lastMd5);
-  res.json({ message: 'Chưa có dữ liệu bàn md5' });
+app.get('/api/md5', async (req, res) => {
+  try {
+    const response = await fetch(API_URL);
+    const json = await response.json();
+    const data = json.data;
+
+    // Tìm object có d1, d2, d3 và có cả md5 (bàn MD5)
+    const result = data.find(item =>
+      typeof item.d1 === 'number' &&
+      typeof item.d2 === 'number' &&
+      typeof item.d3 === 'number' &&
+      item.md5
+    );
+
+    if (!result) return res.status(404).json({ error: 'Không tìm thấy dữ liệu md5' });
+
+    const tong = result.d1 + result.d2 + result.d3;
+
+    res.json({
+      id: 'binhtool90',
+      phien: result.sid || null,
+      xuc_xac_1: result.d1,
+      xuc_xac_2: result.d2,
+      xuc_xac_3: result.d3,
+      tong: tong,
+      ket_qua: getKetQua(tong),
+      pattern: getPattern(result.d1, result.d2, result.d3),
+      du_doan: getKetQua(tong) === 'Tài' ? 'Xỉu' : 'Tài',
+      md5: result.md5
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Lỗi khi lấy dữ liệu md5' });
+  }
 });
 
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
+  console.log(`Server đang chạy tại http://localhost:${PORT}`);
 });
